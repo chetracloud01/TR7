@@ -181,3 +181,43 @@ Still mock/static: the Model Routing / Usage editing UI in Settings
 later pass) and the correlation-check math for parlay slips (`Slip`/
 `SlipLeg` models exist but no route builds one yet). Both are later
 passes per the build order.
+
+**Phase 6** (Integration polish — the build order's phase 7:
+"link prediction → bet flow end-to-end, analytics, export"): done.
+- Auto-settle: a pending bet placed from a match's own finalized 1X2
+  prediction now settles itself — won or lost against `final_tip` —
+  the moment that match's result is recorded, instead of needing a
+  separate manual settle click. The won/void ledger-crediting logic
+  moved into a shared `apply_settlement()` helper so the manual
+  settle endpoint and this auto-settle path can't drift apart, and
+  it no-ops on an already-settled bet, so re-recording a result
+  doesn't double-credit the ledger. Bets on other markets (BTTS,
+  Over/Under, ...) still need manual settlement — their outcome
+  isn't tied to the one stored `final_tip` field a 1X2 pick's is.
+- Analytics: `GET /api/bankroll/dashboard` now returns by-market/
+  by-league/by-model P&L and staked breakdowns over decided bets —
+  the "breakdown by league/market/model used" dashboard line from
+  §6 that hadn't been built yet — rendered as three cards on
+  `/bankroll`.
+- Export: `GET /api/football/batches/{id}/export.xlsx` builds the
+  Full Match Board as a real `.xlsx` via `openpyxl`, from the same
+  row data the board API already serves so the sheet can't drift
+  from what's on screen — the original Football Prediction MVP
+  deliverable (§9) that had shipped without it. An "Export .xlsx"
+  link now sits next to Research All on `/predict`.
+- **Verified, not assumed**: a curl pass placing bets from two
+  seeded predictions and recording results that resolve one won and
+  one lost, confirming both auto-settled with no manual call, the
+  ledger math checked by hand, and idempotency on a repeated result
+  recording (no re-settle, no ledger growth); the exported `.xlsx`
+  downloaded and parsed back with `openpyxl` to confirm its rows
+  match the board; a clean production build and a full Playwright
+  pass with zero hydration warnings and zero page errors. A
+  decorator-placement bug (an edit left `@router.get` attached to
+  the wrong function) was caught immediately at server startup and
+  fixed before this was called done.
+
+Per the build order, what's left is phase 8 (Hardening: key
+encryption audit, rate limiting, backups, deployment) and phase 9+
+(a future module). The still-mock/not-wired items listed under
+Phases 2–5 above haven't changed.
