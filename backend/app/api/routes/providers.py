@@ -1,8 +1,10 @@
 """LLM provider key vault — docs/MASTER_PLAN.md §4.
 
-/test is a format-validation stub for now: it confirms the key looks like
-a real key for that provider without spending a call. Actually pinging
-the provider's API is part of the LLM Gateway (Phase 3)."""
+/test makes a real, cheap call through the same adapter the chat gateway
+uses (a models-list call, never a token-spending completion) — see
+app/llm/adapters/*.py for which of these were verified against a live
+endpoint in this repo's own dev pass, and which (OpenAI/xAI/DeepSeek)
+this sandbox's network policy couldn't reach to verify."""
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy import select
@@ -13,19 +15,10 @@ from app.core.security import decrypt_secret, encrypt_secret, mask_secret
 from app.db.models.llm import LLMProvider
 from app.db.models.user import User
 from app.db.session import get_db
+from app.llm.registry import ADAPTERS, KEYLESS_PROVIDERS
 from app.schemas.providers import ProviderOut, ProviderTestResult, ProviderUpsert
 
 router = APIRouter()
-
-# Loose format checks — good enough to catch "pasted the wrong thing,"
-# not a substitute for actually calling the provider (Phase 3).
-_KEY_PREFIXES = {
-    "anthropic": "sk-ant-",
-    "openai": "sk-",
-    "xai": "xai-",
-    "deepseek": "sk-",
-}
-_KEYLESS_PROVIDERS = {"ollama"}
 
 
 def _to_out(p: LLMProvider) -> ProviderOut:
@@ -34,7 +27,7 @@ def _to_out(p: LLMProvider) -> ProviderOut:
         name=p.name,
         enabled=p.enabled,
         capabilities=p.capabilities,
-        connected=p.name in _KEYLESS_PROVIDERS or bool(p.api_key_encrypted),
+        connected=p.name in KEYLESS_PROVIDERS or bool(p.api_key_encrypted),
         masked_key=mask_secret(decrypt_secret(p.api_key_encrypted)) if p.api_key_encrypted else None,
     )
 
@@ -79,24 +72,24 @@ def delete_provider(
 
 
 @router.post("/providers/{provider_id}/test", response_model=ProviderTestResult)
-def test_provider(
+async def test_provider(
     provider_id: int, user: User = Depends(get_current_user), db: Session = Depends(get_db)
 ) -> ProviderTestResult:
     provider = db.get(LLMProvider, provider_id)
     if provider is None or provider.user_id != user.id:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Provider not found")
 
-    if provider.name in _KEYLESS_PROVIDERS:
-        return ProviderTestResult(ok=True, message="No key needed for a local provider.")
+    adapter = ADAPTERS.get(provider.name)
+    if adapter is None:
+        return ProviderTestResult(ok=False, message=f"Unknown provider '{provider.name}'.")
+
+    if provider.name in KEYLESS_PROVIDERS:
+        ok, message = await adapter.test_connection(None)
+        return ProviderTestResult(ok=ok, message=message)
 
     if not provider.api_key_encrypted:
         return ProviderTestResult(ok=False, message="No key saved yet.")
 
     key = decrypt_secret(provider.api_key_encrypted)
-    expected_prefix = _KEY_PREFIXES.get(provider.name)
-    if expected_prefix and not key.startswith(expected_prefix):
-        return ProviderTestResult(ok=False, message=f'Doesn\'t look like a {provider.name} key (expected "{expected_prefix}...").')
-    if len(key) < 20:
-        return ProviderTestResult(ok=False, message="Key looks too short to be real.")
-
-    return ProviderTestResult(ok=True, message="Format looks right. Live connectivity check lands in Phase 3.")
+    ok, message = await adapter.test_connection(key)
+    return ProviderTestResult(ok=ok, message=message)

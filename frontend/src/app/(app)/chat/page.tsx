@@ -1,30 +1,100 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
+import { api } from "@/lib/api";
+import { streamChat } from "@/lib/streamChat";
 
-const SESSIONS = [
-  { group: "Football prediction", title: "Man City vs Arsenal check", snippet: "Compare the tipster call against...", time: "2 min ago", active: true },
-  { group: "Football prediction", title: "Liverpool set piece trends", snippet: "What does the data say about...", time: "Yesterday", active: false },
-  { group: "General", title: "Staking plan sanity check", snippet: "Is 2% of bankroll too aggressive...", time: "3 days ago", active: false },
-];
+interface ChatSession {
+  id: number;
+  title: string;
+  created_at: string;
+}
 
-const MESSAGES = [
-  { role: "user" as const, text: "Here's a screenshot of a tipster's call for City vs Arsenal — how does it compare to your own read?" },
-  {
-    role: "assistant" as const,
-    text: "Their call: City to win at 1.85, medium confidence. My model has City at 78% (vs. their implied 54%) — mostly driven by Arsenal's centre-back injuries. Agreement is directional, but I'm notably more confident. I'd size this as modest value rather than a strong edge.",
-    model: "Claude Opus 5 · reasoning · 1.2s",
-  },
-  { role: "user" as const, text: "What stake does that suggest under my Kelly plan?" },
-  {
-    role: "assistant" as const,
-    text: "About $42, or 2.1% of your current bankroll — sent to your bet slip.",
-    model: "Claude Haiku 4.5 · fast · streaming",
-  },
-];
+interface ChatMessage {
+  id: number;
+  role: "user" | "assistant";
+  content: string;
+  model_used: string | null;
+  created_at: string;
+}
 
 export default function ChatPage() {
+  const [sessions, setSessions] = useState<ChatSession[]>([]);
+  const [activeId, setActiveId] = useState<number | null>(null);
+  const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [draft, setDraft] = useState("");
+  const [streamingText, setStreamingText] = useState<string | null>(null);
+  const [errorText, setErrorText] = useState<string | null>(null);
+  const [sending, setSending] = useState(false);
+  const scrollRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    api.get<ChatSession[]>("/chat/sessions").then((rows) => {
+      setSessions(rows);
+      if (rows.length > 0) selectSession(rows[0].id);
+    });
+  }, []);
+
+  useEffect(() => {
+    scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight });
+  }, [messages, streamingText]);
+
+  async function selectSession(id: number) {
+    setActiveId(id);
+    setErrorText(null);
+    setStreamingText(null);
+    const rows = await api.get<ChatMessage[]>(`/chat/sessions/${id}/messages`);
+    setMessages(rows);
+  }
+
+  async function newChat() {
+    const session = await api.post<ChatSession>("/chat/sessions", { title: "New chat" });
+    setSessions((prev) => [session, ...prev]);
+    setActiveId(session.id);
+    setMessages([]);
+    setErrorText(null);
+    setStreamingText(null);
+  }
+
+  async function send() {
+    const content = draft.trim();
+    if (!content || sending) return;
+
+    let sessionId = activeId;
+    if (sessionId == null) {
+      const session = await api.post<ChatSession>("/chat/sessions", { title: content.slice(0, 48) });
+      setSessions((prev) => [session, ...prev]);
+      sessionId = session.id;
+      setActiveId(sessionId);
+    }
+
+    setDraft("");
+    setErrorText(null);
+    setMessages((prev) => [...prev, { id: -1, role: "user", content, model_used: null, created_at: new Date().toISOString() }]);
+    setSending(true);
+    setStreamingText("");
+
+    await streamChat(sessionId, content, "chat", {
+      onToken: (text) => setStreamingText((prev) => (prev ?? "") + text),
+      onDone: ({ provider, model }) => {
+        setStreamingText((current) => {
+          setMessages((prev) => [
+            ...prev,
+            { id: -2, role: "assistant", content: current ?? "", model_used: `${provider}:${model}`, created_at: new Date().toISOString() },
+          ]);
+          return null;
+        });
+        setSending(false);
+      },
+      onError: (message) => {
+        setErrorText(message);
+        setStreamingText(null);
+        setSending(false);
+      },
+    });
+  }
+
+  const activeSession = sessions.find((s) => s.id === activeId);
 
   return (
     <div className="flex h-screen overflow-hidden">
@@ -33,6 +103,7 @@ export default function ChatPage() {
           <span className="text-[13px] font-semibold">Conversations</span>
           <button
             aria-label="New chat"
+            onClick={newChat}
             className="w-[26px] h-[26px] rounded-lg border flex items-center justify-center cursor-pointer"
             style={{ background: "var(--surface-2)", borderColor: "var(--border-2)" }}
           >
@@ -42,89 +113,88 @@ export default function ChatPage() {
           </button>
         </div>
 
-        <div className="px-5 pb-4">
-          <div className="flex items-center gap-2 rounded-[10px] border px-3 py-2.5" style={{ background: "var(--surface)", borderColor: "var(--border)" }}>
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--text-3)" strokeWidth="2" strokeLinecap="round">
-              <circle cx="11" cy="11" r="7" />
-              <path d="M21 21l-4.3-4.3" />
-            </svg>
-            <span className="text-[12.5px]" style={{ color: "var(--text-3)" }}>Search conversations</span>
-          </div>
+        <div className="flex flex-col px-3 gap-0.5 overflow-y-auto">
+          {sessions.length === 0 && (
+            <span className="text-xs px-2 py-2" style={{ color: "var(--text-3)" }}>No conversations yet — send a message to start one.</span>
+          )}
+          {sessions.map((s) => (
+            <button
+              key={s.id}
+              onClick={() => selectSession(s.id)}
+              className="flex flex-col gap-0.5 px-2 py-2.5 rounded-[10px] text-left cursor-pointer"
+              style={{ background: s.id === activeId ? "var(--surface)" : "transparent", border: s.id === activeId ? "1px solid var(--border)" : "1px solid transparent" }}
+            >
+              <span className="text-[13px] font-medium truncate" style={{ color: s.id === activeId ? "var(--text)" : "var(--text-2)" }}>{s.title}</span>
+              <span className="tr7-mono text-[10px]" style={{ color: "var(--text-3)" }}>{new Date(s.created_at).toLocaleDateString()}</span>
+            </button>
+          ))}
         </div>
-
-        {["Football prediction", "General"].map((group) => (
-          <div key={group}>
-            <div className="px-5 pt-3 pb-1.5">
-              <span className="text-[10.5px] tracking-wider uppercase" style={{ color: "var(--text-3)" }}>{group}</span>
-            </div>
-            <div className="flex flex-col px-3">
-              {SESSIONS.filter((s) => s.group === group).map((s) => (
-                <div
-                  key={s.title}
-                  className="flex flex-col gap-0.5 px-2 py-2.5 rounded-[10px]"
-                  style={{ background: s.active ? "var(--surface)" : "transparent", border: s.active ? "1px solid var(--border)" : "1px solid transparent" }}
-                >
-                  <span className="text-[13px] font-medium" style={{ color: s.active ? "var(--text)" : "var(--text-2)" }}>{s.title}</span>
-                  <span className="text-[11.5px] truncate" style={{ color: "var(--text-3)" }}>{s.snippet}</span>
-                  <span className="tr7-mono text-[10px]" style={{ color: s.active ? "var(--positive)" : "var(--text-3)" }}>{s.time}</span>
-                </div>
-              ))}
-            </div>
-          </div>
-        ))}
       </div>
 
       <div className="flex-1 flex flex-col min-w-0">
         <div className="flex items-center justify-between px-8 py-[22px] border-b" style={{ borderColor: "var(--border)" }}>
           <div className="flex flex-col gap-0.5">
-            <span className="text-[14.5px] font-semibold">Man City vs Arsenal check</span>
-            <span className="text-[11.5px]" style={{ color: "var(--text-3)" }}>Linked to Predict — Football</span>
+            <span className="text-[14.5px] font-semibold">{activeSession?.title ?? "New conversation"}</span>
+            <span className="text-[11.5px]" style={{ color: "var(--text-3)" }}>Routes per task — see Settings → Model routing</span>
           </div>
-          <button className="flex items-center gap-2 rounded-[10px] border px-3.5 py-2 cursor-pointer" style={{ background: "var(--surface)", borderColor: "var(--border)" }}>
+          <div className="flex items-center gap-2 rounded-[10px] border px-3.5 py-2" style={{ background: "var(--surface)", borderColor: "var(--border)" }}>
             <span className="w-1.5 h-1.5 rounded-full" style={{ background: "var(--positive)" }} />
             <span className="text-[12.5px]">Auto · routes per task</span>
-            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="var(--text-3)" strokeWidth="2" strokeLinecap="round">
-              <path d="M6 9l6 6 6-6" />
-            </svg>
-          </button>
+          </div>
         </div>
 
-        <div className="flex-1 px-8 py-7 flex flex-col gap-5 overflow-y-auto">
-          {MESSAGES.map((m, i) =>
+        <div ref={scrollRef} className="flex-1 px-8 py-7 flex flex-col gap-5 overflow-y-auto">
+          {messages.length === 0 && streamingText === null && (
+            <span className="text-sm m-auto" style={{ color: "var(--text-3)" }}>Ask anything, or paste a prediction to compare.</span>
+          )}
+          {messages.map((m, i) =>
             m.role === "user" ? (
               <div key={i} className="flex justify-end">
                 <div className="max-w-[480px] rounded-[14px] rounded-br-[2px] px-4 py-3 border" style={{ background: "#2B2013", borderColor: "#3C2C18" }}>
-                  <span className="text-[13.5px] leading-relaxed" style={{ color: "var(--text)" }}>{m.text}</span>
+                  <span className="text-[13.5px] leading-relaxed whitespace-pre-wrap" style={{ color: "var(--text)" }}>{m.content}</span>
                 </div>
               </div>
             ) : (
               <div key={i} className="flex flex-col gap-1.5 max-w-[560px]">
                 <div className="rounded-[14px] rounded-bl-[2px] px-4 py-3.5 tr7-card">
-                  <span className="text-[13.5px] leading-relaxed" style={{ color: "var(--text)" }}>{m.text}</span>
+                  <span className="text-[13.5px] leading-relaxed whitespace-pre-wrap" style={{ color: "var(--text)" }}>{m.content}</span>
                 </div>
-                <span className="tr7-mono text-[10.5px] pl-1" style={{ color: "var(--text-3)" }}>{m.model}</span>
+                {m.model_used && <span className="tr7-mono text-[10.5px] pl-1" style={{ color: "var(--text-3)" }}>{m.model_used.replace(":", " · ")}</span>}
               </div>
             )
+          )}
+
+          {streamingText !== null && (
+            <div className="flex flex-col gap-1.5 max-w-[560px]">
+              <div className="rounded-[14px] rounded-bl-[2px] px-4 py-3.5 tr7-card">
+                <span className="text-[13.5px] leading-relaxed whitespace-pre-wrap" style={{ color: "var(--text)" }}>
+                  {streamingText || "…"}
+                </span>
+              </div>
+              <span className="tr7-mono text-[10.5px] pl-1" style={{ color: "var(--positive)" }}>streaming...</span>
+            </div>
+          )}
+
+          {errorText && (
+            <div className="flex flex-col gap-1.5 max-w-[560px]">
+              <div className="rounded-[14px] rounded-bl-[2px] px-4 py-3.5 border" style={{ background: "var(--danger-bg)", borderColor: "var(--danger)" }}>
+                <span className="text-[13.5px] leading-relaxed" style={{ color: "var(--danger)" }}>{errorText}</span>
+              </div>
+            </div>
           )}
         </div>
 
         <div className="px-8 pb-7 pt-5">
           <div className="flex items-center gap-2.5 rounded-[14px] border pl-4 pr-2.5 py-2" style={{ background: "var(--surface)", borderColor: "var(--border-2)" }}>
-            <button aria-label="Attach file" className="bg-transparent border-none cursor-pointer flex">
-              <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="var(--text-2)" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round">
-                <path d="M21 12.5l-8.5 8.5a5 5 0 01-7-7l9-9a3.5 3.5 0 015 5l-9 9a2 2 0 01-3-3l8-8" />
-              </svg>
-            </button>
-            <button aria-label="Attach image" className="bg-transparent border-none cursor-pointer flex">
-              <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="var(--text-2)" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round">
-                <rect x="3" y="5" width="18" height="14" rx="2" />
-                <circle cx="9" cy="10.5" r="1.4" />
-                <path d="M21 16l-5.5-5.5-4 4L8 11l-5 5" />
-              </svg>
-            </button>
             <input
               value={draft}
               onChange={(e) => setDraft(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter" && !e.shiftKey) {
+                  e.preventDefault();
+                  send();
+                }
+              }}
               type="text"
               placeholder="Ask anything, or paste a prediction to compare..."
               className="flex-1 bg-transparent outline-none text-[13.5px]"
@@ -133,7 +203,8 @@ export default function ChatPage() {
             <span className="text-[11px] px-1" style={{ color: "var(--text-3)" }}>Auto</span>
             <button
               aria-label="Send message"
-              disabled={!draft.trim()}
+              onClick={send}
+              disabled={!draft.trim() || sending}
               className="w-[34px] h-[34px] rounded-[10px] flex items-center justify-center shrink-0 cursor-pointer disabled:opacity-40"
               style={{ background: "var(--accent)" }}
             >

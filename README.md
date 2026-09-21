@@ -71,14 +71,35 @@ staking) ported to TypeScript, and the full backend data model
   `/login`, and every `(app)` route redirects there server-side if you're
   not signed in.
 - The LLM provider key vault in Settings is real: add/edit/test/remove a
-  key per provider, encrypted at rest, masked on display. "Test" checks
-  the key's format for now — an actual connectivity check to each
-  provider is Phase 3 (LLM Gateway).
+  key per provider, encrypted at rest, masked on display.
 - The theme picker now persists to your account (`/api/preferences`) in
   addition to localStorage, so it's the same on a fresh browser once
   you're logged in — verified with a clean-profile browser in this repo's
   test pass.
 
-Still mock/static: Chat, the Full Match Board, Bankroll, and the Model
-Routing / Usage cards in Settings. Those go live in Phases 3–6 (LLM
-Gateway, then each module wired to it in turn).
+**Phase 3** (LLM Gateway): done.
+- `backend/app/llm/` — one adapter interface across Anthropic, Google
+  Gemini, and an OpenAI-compatible adapter reused for OpenAI/xAI/DeepSeek/
+  a local Ollama (same shape, different `base_url`). A router resolves a
+  task type (`chat`, `football_reasoning`, `vision`) to an ordered model
+  chain and falls back to the next model on any provider error.
+- Settings' "Test" button is a real connectivity check now (a cheap
+  models-list call through the same adapter the chat gateway uses, never
+  a token-spending completion).
+- Chat is fully live: real sessions, real streaming (SSE) through
+  `/api/chat/sessions/{id}/messages`, and each assistant reply is tagged
+  with which provider/model actually answered.
+- **Verified, not assumed**: the Anthropic and Google adapters were
+  exercised against their real APIs in this repo's dev pass (with a
+  throwaway key — proving request-shape and error-surfacing, not
+  fetching real completions), including one full round trip through the
+  actual Chat UI in a browser. This sandbox's network policy blocks
+  api.openai.com/api.x.ai/api.deepseek.com outright, so the OpenAI-
+  compatible adapter (same well-defined SDK shape, confirmed present by
+  introspection) could not be verified live here — test it yourself
+  against whichever of those you actually use.
+
+Still mock/static: the Full Match Board, Bankroll, and the Model Routing
+/ Usage editing UI in Settings (routing now reads real data via
+`/api/routing`, editing it is a later pass). Those go live in Phases
+4–6 as each module gets wired to the gateway in turn.
