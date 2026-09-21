@@ -134,11 +134,50 @@ staking) ported to TypeScript, and the full backend data model
 
 Still not wired: image/file batch upload (tabs present in the UI, no
 backend endpoint yet — text paste is the only real path in), a live
-odds/results feed (both fully manual for now), calibration-log
-automation, and the stake suggestion's bankroll figure, which reads a
-placeholder constant instead of the real Bankroll module.
+odds/results feed (both fully manual for now), and calibration-log
+automation.
 
-Still mock/static: Bankroll, and the Model Routing / Usage editing UI
-in Settings (routing now reads real data via `/api/routing`, editing
-it is a later pass). Those go live in Phases 5–6 as each module gets
-wired to the gateway in turn.
+**Phase 5** (Bankroll module): done.
+- `backend/app/bankroll/` — `current_balance()` derives the bankroll
+  purely from the latest `BankrollLedger.balance_after`, never a
+  separate mutable counter, so it stays auditable against the entry
+  history (docs/MASTER_PLAN.md §6). Placing a bet deducts the stake
+  as a ledger entry; settling one as won credits the full return,
+  void refunds the stake, and lost records nothing further since the
+  stake was already gone at placement.
+- A prediction-sourced bet (`POST /api/bankroll/matches/{id}/bet`)
+  reuses the Football Prediction module's own Kelly + risk-tier
+  stake suggestion and applies the staking rule's `max_stake_pct` as
+  the ceiling on top of it, rather than a second independent sizing
+  formula — exactly the split §6 calls for. The Football module's
+  match detail now sizes its stake suggestion against this real
+  balance too; the `DEFAULT_BANKROLL` placeholder constant from
+  Phase 4 is gone, and the bootstrapped admin user gets a seeded
+  starting deposit of the same figure so real tracking picks up
+  where the placeholder left off.
+- `/bankroll` is fully live: real balance/ROI/win-rate/open-exposure
+  stat tiles, a balance-over-time chart built from actual ledger
+  entries, inline bet settlement, manual bet logging, a deposit/
+  withdrawal form, and an editable staking-rule card. The old mock's
+  Flat/% strategy tabs are gone — the engine only ever implements
+  quarter-Kelly, so selectable tabs that didn't change any
+  calculation would have been dead UI.
+- The Match Detail page's stake card now has a real "Place bet"
+  button wired to the new endpoint, showing the logged bet's stake/
+  odds/status and guarding against a second bet while one is already
+  pending for that match.
+- **Verified, not assumed**: a full curl pass over every new endpoint
+  (deposits, manual bets, settling won/lost/void, a withdrawal that
+  exceeds balance, the duplicate-pending-bet guard, the staking-rule
+  ceiling), the bootstrap seed confirmed against a freshly truncated
+  database, a clean production build (`tsc --noEmit` and `next
+  build`), and a full Playwright pass in that production build:
+  logging in, recording a deposit, logging and settling a bet with
+  the dashboard math checked by hand, and placing a bet from a
+  match's prediction — zero hydration warnings, zero page errors.
+
+Still mock/static: the Model Routing / Usage editing UI in Settings
+(routing now reads real data via `/api/routing`, editing it is a
+later pass) and the correlation-check math for parlay slips (`Slip`/
+`SlipLeg` models exist but no route builds one yet). Both are later
+passes per the build order.
