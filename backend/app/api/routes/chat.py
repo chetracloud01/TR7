@@ -4,6 +4,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.core.deps import get_current_user
+from app.core.rate_limit import llm_call_limiter
 from app.db.models.llm import ChatMessage, ChatSession
 from app.db.models.user import User
 from app.db.session import get_db
@@ -44,7 +45,7 @@ def get_messages(
     return session.messages
 
 
-@router.post("/chat/sessions/{session_id}/messages")
+@router.post("/chat/sessions/{session_id}/messages", dependencies=[Depends(llm_call_limiter.dependency())])
 def send_message(
     session_id: int,
     payload: SendMessageRequest,

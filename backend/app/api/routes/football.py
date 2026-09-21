@@ -13,6 +13,7 @@ from sqlalchemy.orm import Session
 
 from app.bankroll.service import apply_settlement, current_balance
 from app.core.deps import get_current_user
+from app.core.rate_limit import llm_call_limiter
 from app.db.models.bankroll import Bet
 from app.db.models.football import (
     AppPrediction,
@@ -275,7 +276,7 @@ def get_match(match_id: int, user: User = Depends(get_current_user), db: Session
     return _to_detail(match, user.id, db)
 
 
-@router.post("/football/matches/{match_id}/research", response_model=MatchDetailOut)
+@router.post("/football/matches/{match_id}/research", response_model=MatchDetailOut, dependencies=[Depends(llm_call_limiter.dependency())])
 async def research_match(match_id: int, user: User = Depends(get_current_user), db: Session = Depends(get_db)) -> MatchDetailOut:
     match = _get_owned_match(match_id, user, db)
     app_pred = match.app_prediction

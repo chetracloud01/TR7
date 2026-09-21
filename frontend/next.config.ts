@@ -6,6 +6,9 @@ import type { NextConfig } from "next";
 const BACKEND_INTERNAL_URL = process.env.BACKEND_INTERNAL_URL || "http://localhost:8000";
 
 const nextConfig: NextConfig = {
+  // Traces only the files each route actually needs into .next/standalone,
+  // so the production Docker image doesn't need node_modules copied in.
+  output: "standalone",
   async rewrites() {
     return [{ source: "/api/:path*", destination: `${BACKEND_INTERNAL_URL}/api/:path*` }];
   },

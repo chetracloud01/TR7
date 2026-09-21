@@ -1,0 +1,53 @@
+# Production compose file: built images (no bind-mounted source, no
+# --reload), no host port exposed for Postgres. Pair with a reverse
+# proxy (Caddy/nginx/Traefik) in front for TLS — see docs/DEPLOYMENT.md.
+#
+# Usage:
+#   docker compose -f docker-compose.prod.yml --env-file backend/.env up -d --build
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: tr7
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set a real Postgres password in backend/.env}
+      POSTGRES_DB: tr7
+    volumes:
+      - tr7_postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U tr7"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    restart: unless-stopped
+
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    env_file:
+      - ./backend/.env
+    environment:
+      DATABASE_URL: postgresql+psycopg://tr7:${POSTGRES_PASSWORD}@postgres:5432/tr7
+      ENVIRONMENT: production
+    ports:
+      - "8000:8000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: unless-stopped
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    environment:
+      BACKEND_INTERNAL_URL: http://backend:8000
+    ports:
+      - "3000:3000"
+    depends_on:
+      - backend
+    restart: unless-stopped
+
+volumes:
+  tr7_postgres_data:

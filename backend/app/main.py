@@ -6,7 +6,7 @@ from sqlalchemy import select
 
 from app.api.routes import auth, bankroll, chat, football, health, preferences, providers, routing
 from app.bankroll.service import record_ledger_entry
-from app.core.config import get_settings
+from app.core.config import assert_production_secrets, get_settings
 from app.core.security import hash_password
 from app.db.models.user import User, UserPreference
 from app.db.session import SessionLocal
@@ -17,6 +17,10 @@ from app.db.session import SessionLocal
 STARTING_BANKROLL = 2480.50
 
 settings = get_settings()
+# Fails at import time (process never binds a port) rather than on first
+# request — a production deploy with a leaked placeholder secret should
+# never serve even one request.
+assert_production_secrets(settings)
 
 
 def _bootstrap_admin_user() -> None:

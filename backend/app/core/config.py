@@ -43,3 +43,30 @@ class Settings(BaseSettings):
 @lru_cache
 def get_settings() -> Settings:
     return Settings()
+
+
+# The exact defaults above — checked verbatim, not just "looks like a
+# placeholder" — so a deployment that generated real secrets can never
+# trip this by coincidence.
+_PLACEHOLDER_SECRETS = {
+    "secret_encryption_key": "changeme-generate-a-real-fernet-key-for-local-dev",
+    "session_secret": "changeme-generate-a-real-session-secret-for-local-dev",
+    "admin_password": "changeme",
+}
+
+
+def assert_production_secrets(settings: Settings) -> None:
+    """Refuses to start in production with any secret still at its
+    local-dev placeholder (docs/MASTER_PLAN.md §9, "key encryption
+    audit") — those defaults exist so a fresh clone runs immediately
+    without setup, not so a real deployment silently encrypts provider
+    keys with a value that's sitting in plaintext in this repo's own
+    .env.example."""
+    if settings.environment != "production":
+        return
+    leaked = [name for name, placeholder in _PLACEHOLDER_SECRETS.items() if getattr(settings, name) == placeholder]
+    if leaked:
+        raise RuntimeError(
+            f"Refusing to start with ENVIRONMENT=production while these are still their .env.example placeholder: {', '.join(leaked)}. "
+            "Generate real values for each (see the comment above each field in this file) before deploying."
+        )

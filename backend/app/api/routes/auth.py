@@ -4,6 +4,7 @@ from sqlalchemy.orm import Session
 
 from app.core.config import get_settings
 from app.core.deps import get_current_user
+from app.core.rate_limit import login_limiter
 from app.core.security import create_session_token, verify_password
 from app.db.models.user import User
 from app.db.session import get_db
@@ -25,7 +26,7 @@ def _set_session_cookie(response: Response, user_id: int) -> None:
     )
 
 
-@router.post("/auth/login", response_model=UserOut)
+@router.post("/auth/login", response_model=UserOut, dependencies=[Depends(login_limiter.dependency())])
 def login(payload: LoginRequest, response: Response, db: Session = Depends(get_db)) -> User:
     user = db.scalar(select(User).where(User.email == payload.email))
     if user is None or not verify_password(payload.password, user.hashed_password):
