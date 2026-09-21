@@ -86,6 +86,29 @@ rewrite of the router or the chat layer.
 | Secrets | Provider API keys encrypted at rest (app-level AES, key from env var/secret manager) | Never store keys in plaintext even in your own DB. |
 | Deployment | Docker Compose (Postgres + backend + frontend) for self-host, or Vercel (frontend) + Railway/Fly.io (backend+DB) | Personal-scale, low ops burden either way. |
 
+### Theming
+
+Appearance is a real setting, not a fixed look baked into the CSS — this
+came out of iterating the mockup through several palettes and wanting to
+keep that flexibility for actual use, not just design exploration:
+
+- **Design tokens as CSS custom properties** (`--bg`, `--surface`,
+  `--surface-2`, `--border`, `--text`, `--text-2`, `--accent`,
+  `--positive`, `--danger`, `--pending`, plus the font stacks), scoped on
+  `:root`/`[data-theme]` so every component reads tokens, never hardcoded
+  hex — swapping the attribute repaints the whole app.
+- **A small set of named presets** shipped with the app (the mockup's
+  "Warm Terminal," "Neon Pitch," "Editorial," "Calm Minimal" — see the
+  Settings → Appearance card), each just a token set, plus light/dark
+  per preset. Adding a new preset is a new token file, not new component
+  code.
+- **Stored as a user preference** (`user_preferences.theme_preset`,
+  `.mode`), applied on load and switchable at runtime from Settings
+  without a reload — small enough to skip a dedicated endpoint and just
+  ride the same settings-save path as everything else in that screen.
+- Custom per-user accent color (beyond the preset list) is a later nice-
+  to-have, not v1 — the preset picker covers "change the look" for now.
+
 ---
 
 ## 4. LLM Gateway design
