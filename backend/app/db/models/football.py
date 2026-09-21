@@ -47,7 +47,7 @@ class Match(Base):
 
     batch: Mapped[MatchBatch] = relationship(back_populates="matches")
     app_prediction: Mapped["AppPrediction | None"] = relationship(back_populates="match", uselist=False)
-    research_predictions: Mapped[list["ResearchPrediction"]] = relationship(back_populates="match")
+    research_predictions: Mapped[list["ResearchPrediction"]] = relationship(back_populates="match", order_by="ResearchPrediction.id")
     rule_flags: Mapped[list["ContextRuleFlag"]] = relationship(back_populates="match")
     prediction: Mapped["Prediction | None"] = relationship(back_populates="match", uselist=False)
     confidence_score: Mapped["ConfidenceScore | None"] = relationship(back_populates="match", uselist=False)

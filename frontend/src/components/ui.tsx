@@ -22,6 +22,6 @@ export function Pill({ tone, children }: { tone: keyof typeof PILL_COLORS; child
   );
 }
 
-export function riskTone(risk: "LOW" | "MED" | "HIGH") {
-  return risk === "LOW" ? "positive" : risk === "MED" ? "pending" : "danger";
+export function riskTone(risk: "low" | "medium" | "high") {
+  return risk === "low" ? "positive" : risk === "medium" ? "pending" : "danger";
 }

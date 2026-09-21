@@ -4,7 +4,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy import select
 
-from app.api.routes import auth, chat, health, preferences, providers, routing
+from app.api.routes import auth, chat, football, health, preferences, providers, routing
 from app.core.config import get_settings
 from app.core.security import hash_password
 from app.db.models.user import User, UserPreference
@@ -52,3 +52,4 @@ app.include_router(providers.router, prefix="/api", tags=["providers"])
 app.include_router(preferences.router, prefix="/api", tags=["preferences"])
 app.include_router(chat.router, prefix="/api", tags=["chat"])
 app.include_router(routing.router, prefix="/api", tags=["routing"])
+app.include_router(football.router, prefix="/api", tags=["football"])

@@ -9,7 +9,11 @@ export const metadata: Metadata = {
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
-    <html lang="en" data-theme="warm">
+    // data-theme is deliberately overwritten by THEME_INIT_SCRIPT before
+    // hydration (a saved preference beats this "warm" default) — that's
+    // expected drift, not a real mismatch, so it's suppressed here rather
+    // than warning on every load for anyone with a non-default theme.
+    <html lang="en" data-theme="warm" suppressHydrationWarning>
       <head>
         <link
           rel="stylesheet"
