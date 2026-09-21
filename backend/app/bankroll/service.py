@@ -5,10 +5,12 @@ latest entry's balance_after, never tracked as a separate mutable
 counter, so it stays auditable against the entry history.
 """
 
+from datetime import UTC, datetime
+
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.db.models.bankroll import BankrollLedger, StakingRule
+from app.db.models.bankroll import BankrollLedger, Bet, StakingRule
 
 
 def current_balance(db: Session, user_id: int) -> float:
@@ -43,6 +45,27 @@ def record_ledger_entry(
     db.add(entry)
     db.flush()
     return entry
+
+
+def apply_settlement(db: Session, bet: Bet, outcome: str) -> Bet:
+    """Shared by the manual settle endpoint and the Football module's
+    auto-settle-on-result path (a bet placed from a match's own
+    finalized 1X2 prediction has nothing left to manually grade once
+    that match's result is recorded). `outcome` is won|lost|void; a
+    no-op if the bet isn't pending."""
+    if bet.status != "pending":
+        return bet
+
+    bet.status = outcome
+    bet.settled_at = datetime.now(UTC).replace(tzinfo=None)
+
+    if outcome == "won":
+        record_ledger_entry(db, bet.user_id, transaction_type="bet_return", amount=bet.potential_return, related_bet_id=bet.id)
+    elif outcome == "void":
+        record_ledger_entry(db, bet.user_id, transaction_type="bet_return", amount=bet.stake, related_bet_id=bet.id)
+    # "lost": stake was already deducted at placement, nothing further to record.
+
+    return bet
 
 
 def get_or_create_staking_rule(db: Session, user_id: int) -> StakingRule:

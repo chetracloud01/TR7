@@ -4,16 +4,16 @@ for a prediction-sourced bet reuses the Football Prediction module's
 Kelly + risk-tier suggestion (app.football.staking) and this module
 only enforces the staking-rule ceiling on top of it."""
 
-from datetime import UTC, datetime
-
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.bankroll.service import current_balance, get_or_create_staking_rule, record_ledger_entry
+from collections import defaultdict
+
+from app.bankroll.service import apply_settlement, current_balance, get_or_create_staking_rule, record_ledger_entry
 from app.core.deps import get_current_user
 from app.db.models.bankroll import BankrollLedger, Bet, StakingRule
-from app.db.models.football import Match, Prediction, RiskFlag
+from app.db.models.football import Match, Prediction, ResearchPrediction, RiskFlag
 from app.db.models.user import User
 from app.db.session import get_db
 from app.football.staking import suggested_stake
@@ -21,6 +21,7 @@ from app.schemas.bankroll import (
     BetCreate,
     BetOut,
     BetSettle,
+    BreakdownRow,
     DashboardOut,
     LedgerCreate,
     LedgerEntryOut,
@@ -87,6 +88,22 @@ def _compute_stake_suggestion(db: Session, user: User, match: Match) -> tuple[Pr
     return pred, StakeSuggestionOut(pct=stake.pct, amount=stake.amount)
 
 
+def _bet_pl(bet: Bet) -> float:
+    if bet.status == "won":
+        return bet.potential_return - bet.stake
+    if bet.status == "lost":
+        return -bet.stake
+    return 0.0  # pending or void
+
+
+def _breakdown(rows: dict[str, dict[str, float]]) -> list[BreakdownRow]:
+    return sorted(
+        (BreakdownRow(label=label, count=int(v["count"]), staked=round(v["staked"], 2), pl=round(v["pl"], 2)) for label, v in rows.items()),
+        key=lambda r: r.pl,
+        reverse=True,
+    )
+
+
 @router.get("/bankroll/dashboard", response_model=DashboardOut)
 def get_dashboard(user: User = Depends(get_current_user), db: Session = Depends(get_db)) -> DashboardOut:
     balance = current_balance(db, user.id)
@@ -99,14 +116,45 @@ def get_dashboard(user: User = Depends(get_current_user), db: Session = Depends(
     decided = wins + losses
 
     total_staked = sum(b.stake for b in settled if b.status != "void")
-    total_pl = sum(
-        (b.potential_return - b.stake) if b.status == "won" else (-b.stake if b.status == "lost" else 0.0)
-        for b in settled
-    )
+    total_pl = sum(_bet_pl(b) for b in settled)
 
     open_bets = [b for b in bets if b.status == "pending"]
 
     history = db.scalars(select(BankrollLedger).where(BankrollLedger.user_id == user.id).order_by(BankrollLedger.id)).all()
+
+    # Breakdowns cover decided bets only (won/lost) — a void bet has no
+    # real P&L signal to attribute to a market, league, or model.
+    by_market: dict[str, dict[str, float]] = defaultdict(lambda: {"count": 0, "staked": 0.0, "pl": 0.0})
+    by_league: dict[str, dict[str, float]] = defaultdict(lambda: {"count": 0, "staked": 0.0, "pl": 0.0})
+    by_model: dict[str, dict[str, float]] = defaultdict(lambda: {"count": 0, "staked": 0.0, "pl": 0.0})
+
+    for b in settled:
+        if b.status == "void":
+            continue
+        pl = _bet_pl(b)
+
+        row = by_market[b.market]
+        row["count"] += 1
+        row["staked"] += b.stake
+        row["pl"] += pl
+
+        if b.match_id is not None:
+            match = db.get(Match, b.match_id)
+            if match is not None:
+                row = by_league[match.competition]
+                row["count"] += 1
+                row["staked"] += b.stake
+                row["pl"] += pl
+
+        if b.prediction_id is not None and b.match_id is not None:
+            research = db.scalar(
+                select(ResearchPrediction).where(ResearchPrediction.match_id == b.match_id).order_by(ResearchPrediction.id.desc())
+            )
+            if research is not None:
+                row = by_model[research.model_used]
+                row["count"] += 1
+                row["staked"] += b.stake
+                row["pl"] += pl
 
     return DashboardOut(
         balance=balance,
@@ -118,6 +166,9 @@ def get_dashboard(user: User = Depends(get_current_user), db: Session = Depends(
         open_bets_count=len(open_bets),
         open_stake_amount=round(sum(b.stake for b in open_bets), 2),
         history=[LedgerEntryOut.model_validate(e) for e in history],
+        by_market=_breakdown(by_market),
+        by_league=_breakdown(by_league),
+        by_model=_breakdown(by_model),
     )
 
 
@@ -214,14 +265,7 @@ def settle_bet(bet_id: int, payload: BetSettle, user: User = Depends(get_current
     if bet.status != "pending":
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Bet is already settled.")
 
-    bet.status = payload.status
-    bet.settled_at = datetime.now(UTC).replace(tzinfo=None)
-
-    if payload.status == "won":
-        record_ledger_entry(db, user.id, transaction_type="bet_return", amount=bet.potential_return, related_bet_id=bet.id)
-    elif payload.status == "void":
-        record_ledger_entry(db, user.id, transaction_type="bet_return", amount=bet.stake, related_bet_id=bet.id)
-    # "lost": stake was already deducted at placement, nothing further to record.
+    apply_settlement(db, bet, payload.status)
 
     db.commit()
     db.refresh(bet)

@@ -67,6 +67,13 @@ class StakingRuleUpdate(BaseModel):
     auto_suggest_from_confidence: bool | None = None
 
 
+class BreakdownRow(BaseModel):
+    label: str
+    count: int
+    staked: float
+    pl: float
+
+
 class DashboardOut(BaseModel):
     balance: float
     roi_pct: float
@@ -77,3 +84,6 @@ class DashboardOut(BaseModel):
     open_bets_count: int
     open_stake_amount: float
     history: list[LedgerEntryOut]
+    by_market: list[BreakdownRow]
+    by_league: list[BreakdownRow]
+    by_model: list[BreakdownRow]

@@ -160,6 +160,11 @@ export default function PredictBoardPage() {
               Qualifying
             </button>
           </div>
+          {batch && (
+            <a href={`/api/football/batches/${batch.id}/export.xlsx`} className="tr7-btn-ghost">
+              Export .xlsx
+            </a>
+          )}
           {unresearchedCount > 0 && (
             <button onClick={researchAll} className="tr7-btn-primary cursor-pointer">
               Research all ({unresearchedCount})

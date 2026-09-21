@@ -28,6 +28,13 @@ interface Bet {
   settled_at: string | null;
 }
 
+interface BreakdownRow {
+  label: string;
+  count: number;
+  staked: number;
+  pl: number;
+}
+
 interface Dashboard {
   balance: number;
   roi_pct: number;
@@ -38,6 +45,9 @@ interface Dashboard {
   open_bets_count: number;
   open_stake_amount: number;
   history: LedgerEntry[];
+  by_market: BreakdownRow[];
+  by_league: BreakdownRow[];
+  by_model: BreakdownRow[];
 }
 
 interface StakingRule {
@@ -211,6 +221,14 @@ export default function BankrollPage() {
             )}
           </div>
 
+          {(dashboard.by_market.length > 0 || dashboard.by_league.length > 0 || dashboard.by_model.length > 0) && (
+            <div className="flex gap-4">
+              <BreakdownCard title="By market" rows={dashboard.by_market} />
+              <BreakdownCard title="By league" rows={dashboard.by_league} />
+              <BreakdownCard title="By model" rows={dashboard.by_model} />
+            </div>
+          )}
+
           <div className="tr7-card p-4 flex flex-col gap-3">
             <span className="text-[13px] font-semibold">Record a deposit or withdrawal</span>
             <div className="flex items-center gap-2">
@@ -353,6 +371,26 @@ function BankrollChart({ history }: { history: LedgerEntry[] }) {
         <span className="tr7-mono text-[10.5px]" style={{ color: "var(--text-3)" }}>{fmt(last)}</span>
       </div>
     </>
+  );
+}
+
+function BreakdownCard({ title, rows }: { title: string; rows: BreakdownRow[] }) {
+  return (
+    <div className="flex-1 tr7-card p-4 flex flex-col gap-2.5">
+      <span className="text-[12.5px] font-semibold">{title}</span>
+      {rows.length === 0 ? (
+        <span className="text-xs" style={{ color: "var(--text-3)" }}>No decided bets yet.</span>
+      ) : (
+        rows.slice(0, 5).map((r) => (
+          <div key={r.label} className="flex items-center justify-between gap-2">
+            <span className="text-[11.5px] truncate" style={{ color: "var(--text-2)" }} title={r.label}>{r.label} <span style={{ color: "var(--text-3)" }}>({r.count})</span></span>
+            <span className="tr7-mono text-[11.5px] shrink-0" style={{ color: r.pl > 0 ? "var(--positive)" : r.pl < 0 ? "var(--danger)" : "var(--text-2)" }}>
+              {r.pl > 0 ? "+" : ""}${r.pl.toFixed(2)}
+            </span>
+          </div>
+        ))
+      )}
+    </div>
   );
 }
 

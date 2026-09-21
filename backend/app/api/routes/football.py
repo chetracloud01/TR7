@@ -7,11 +7,13 @@ read, not verified research (see that module's docstring)."""
 from datetime import UTC, datetime
 
 from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi.responses import Response
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.bankroll.service import current_balance
+from app.bankroll.service import apply_settlement, current_balance
 from app.core.deps import get_current_user
+from app.db.models.bankroll import Bet
 from app.db.models.football import (
     AppPrediction,
     ConfidenceScore,
@@ -29,6 +31,7 @@ from app.football import flags
 from app.football.cascade import derive_cascade, winner
 from app.football.confidence import FACTOR_LABELS, compute_confidence
 from app.football.engine import ResearchError, run_research
+from app.football.export import build_board_workbook
 from app.football.odds import ev, implied_probabilities
 from app.football.parser import parse_batch_text, parse_kickoff
 from app.football.staking import suggested_stake
@@ -168,6 +171,19 @@ def create_batch(payload: BatchCreate, user: User = Depends(get_current_user), d
 def get_batch(batch_id: int, user: User = Depends(get_current_user), db: Session = Depends(get_db)) -> BatchOut:
     batch = _get_owned_batch(batch_id, user, db)
     return BatchOut(id=batch.id, created_at=batch.created_at, matches=[_to_board_row(m) for m in batch.matches])
+
+
+@router.get("/football/batches/{batch_id}/export.xlsx")
+def export_batch(batch_id: int, user: User = Depends(get_current_user), db: Session = Depends(get_db)) -> Response:
+    batch = _get_owned_batch(batch_id, user, db)
+    rows = [_to_board_row(m) for m in batch.matches]
+    buf = build_board_workbook(rows)
+    filename = f"tr7-full-match-board-{batch.id}.xlsx"
+    return Response(
+        content=buf.getvalue(),
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
 
 
 def _to_detail(match: Match, user_id: int, db: Session) -> MatchDetailOut:
@@ -383,6 +399,20 @@ def record_result(match_id: int, payload: ResultUpdate, user: User = Depends(get
     result.actual_total_goals = home + away
     result.settled_at = datetime.now(UTC).replace(tzinfo=None)
     result.result_source = "manual"
+
+    # A 1X2 bet placed from this match's own finalized prediction is
+    # fully graded by the result we just recorded — nothing left for
+    # the bankroll module to manually settle (§6/§7 integration).
+    # Other markets (BTTS, Over/Under, ...) aren't auto-graded here:
+    # their actual outcome isn't tied to a single stored prediction
+    # field the way a 1X2 pick's win/loss against final_tip is.
+    pred = match.prediction
+    if pred is not None and pred.final_tip is not None:
+        linked_bet = db.scalar(
+            select(Bet).where(Bet.match_id == match.id, Bet.prediction_id == pred.id, Bet.status == "pending")
+        )
+        if linked_bet is not None:
+            apply_settlement(db, linked_bet, "won" if outcome == pred.final_tip else "lost")
 
     db.commit()
     db.refresh(match)
