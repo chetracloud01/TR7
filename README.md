@@ -99,7 +99,46 @@ staking) ported to TypeScript, and the full backend data model
   introspection) could not be verified live here — test it yourself
   against whichever of those you actually use.
 
-Still mock/static: the Full Match Board, Bankroll, and the Model Routing
-/ Usage editing UI in Settings (routing now reads real data via
-`/api/routing`, editing it is a later pass). Those go live in Phases
-4–6 as each module gets wired to the gateway in turn.
+**Phase 4** (Football Prediction module): done.
+- `backend/app/football/` — the Master Script v3.1 methodology as code:
+  a §1E batch-table parser (handles both 8-cell and 6-cell odds
+  formats), de-vigged implied probabilities + EV, correct-score cascade
+  derivation (§1D), 8-factor confidence scoring → star rating (§7),
+  quarter-Kelly stake suggestion with a risk-tier haircut, and the
+  agreement/usage/risk-tier flags (§7B).
+- A research pass (`POST /api/football/matches/{id}/research`) builds
+  the two-source comparison prompt, streams it through the Phase 3 LLM
+  gateway, and extracts + validates a strict-JSON response into stored
+  `ResearchPrediction`/`ContextRuleFlag` (R1–R6)/`Prediction`/
+  `ConfidenceScore`/`RiskFlag` rows.
+- `/predict` (Full Match Board) and `/predict/[id]` (Match Detail) are
+  fully live: paste-in batch upload and parsing, per-match or
+  research-all, manual result entry and grading, and real
+  researched/settled/won/lost counts — the mock `data/matches.ts` and
+  `lib/predict.ts` are gone.
+- **Verified, not assumed**: batch parsing against real markdown input;
+  a full research pass against both the Anthropic and Google backends
+  through the Phase 3 gateway (mocked-gateway `TestClient` runs plus
+  real Playwright browser sessions); manual result recording and
+  grading end to end. Five real bugs were found this way and fixed —
+  a `risk_tier()` call that forced "high" risk on any cascade with a
+  winning margin (confusing "scoreline has a margin" with "this is a
+  handicap bet", when `final_tip` is always 1X2), a result-status
+  helper that reported "lost" for a result recorded before research
+  completed, a result-entry form that couldn't be reached before
+  research finished, a missing save-confirmation for that same case,
+  and a real hydration-mismatch warning (present since Phase 1/2, not
+  new this phase) from `layout.tsx` hardcoding `data-theme="warm"`
+  against the pre-hydration theme script — fixed and re-verified at
+  zero warnings across 4 pages in a production build.
+
+Still not wired: image/file batch upload (tabs present in the UI, no
+backend endpoint yet — text paste is the only real path in), a live
+odds/results feed (both fully manual for now), calibration-log
+automation, and the stake suggestion's bankroll figure, which reads a
+placeholder constant instead of the real Bankroll module.
+
+Still mock/static: Bankroll, and the Model Routing / Usage editing UI
+in Settings (routing now reads real data via `/api/routing`, editing
+it is a later pass). Those go live in Phases 5–6 as each module gets
+wired to the gateway in turn.
