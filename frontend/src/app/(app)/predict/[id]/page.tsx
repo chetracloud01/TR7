@@ -11,6 +11,7 @@ interface ConfidenceOut { factors: { label: string; points: number }[]; total: n
 interface CascadeOut { margin: number; btts: boolean; over_under: string; handicap_note: string }
 interface StakeOut { pct: number; amount: number }
 interface ResultOut { status: "pending" | "won" | "lost"; score: string | null; settled_at: string | null }
+interface BetSummary { id: number; match_id: number | null; status: "pending" | "won" | "lost" | "void"; stake: number; odds: number }
 
 interface MatchDetail {
   id: number;
@@ -59,13 +60,33 @@ export default function MatchDetailPage() {
   const [researchError, setResearchError] = useState<string | null>(null);
   const [resultInput, setResultInput] = useState("");
   const [recording, setRecording] = useState(false);
+  const [existingBet, setExistingBet] = useState<BetSummary | null>(null);
+  const [placingBet, setPlacingBet] = useState(false);
+  const [betError, setBetError] = useState<string | null>(null);
 
   useEffect(() => {
     api.get<MatchDetail>(`/football/matches/${params.id}`).then((m) => {
       setMatch(m);
       setLoading(false);
     });
+    api.get<BetSummary[]>("/bankroll/bets").then((bets) => {
+      const forMatch = bets.find((b) => b.match_id === Number(params.id));
+      if (forMatch) setExistingBet(forMatch);
+    });
   }, [params.id]);
+
+  async function placeBet() {
+    setPlacingBet(true);
+    setBetError(null);
+    try {
+      const bet = await api.post<BetSummary>(`/bankroll/matches/${params.id}/bet`);
+      setExistingBet(bet);
+    } catch (err) {
+      setBetError(err instanceof ApiError ? err.message : "Couldn't place that bet.");
+    } finally {
+      setPlacingBet(false);
+    }
+  }
 
   async function research() {
     setResearching(true);
@@ -216,11 +237,26 @@ export default function MatchDetailPage() {
                 </span>
               </div>
               <Divider tall />
-              <p className="text-[12.5px] leading-relaxed m-0 flex-1" style={{ color: "var(--text-2)" }}>
-                Bankroll figure is a placeholder until the Bankroll module (docs/MASTER_PLAN.md §6) is wired to real data.
-              </p>
+              <div className="flex-1 flex flex-col gap-1">
+                {betError && <span className="text-xs" style={{ color: "var(--danger)" }}>{betError}</span>}
+                {existingBet ? (
+                  <span className="text-[12.5px]" style={{ color: "var(--text-2)" }}>
+                    Bet logged: ${existingBet.stake.toFixed(2)} @ {existingBet.odds.toFixed(2)} —{" "}
+                    <span style={{ color: existingBet.status === "won" ? "var(--positive)" : existingBet.status === "lost" ? "var(--danger)" : "var(--pending)" }}>
+                      {existingBet.status === "pending" ? "pending" : existingBet.status}
+                    </span>
+                  </span>
+                ) : (
+                  <span className="text-[12.5px]" style={{ color: "var(--text-2)" }}>Sized against your current bankroll balance and staking-rule ceiling.</span>
+                )}
+              </div>
               <Link href="/chat" className="tr7-btn-ghost shrink-0">Discuss in chat</Link>
-              <button className="tr7-btn-ghost shrink-0 cursor-pointer" disabled title="Bankroll module isn't wired yet">Add to bet slip</button>
+              <Link href="/bankroll" className="tr7-btn-ghost shrink-0">View bankroll</Link>
+              {!existingBet && (
+                <button onClick={placeBet} disabled={placingBet} className="tr7-btn-primary shrink-0 cursor-pointer disabled:opacity-50">
+                  {placingBet ? "Placing..." : "Place bet"}
+                </button>
+              )}
             </div>
           )}
         </>

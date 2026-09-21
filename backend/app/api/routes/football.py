@@ -10,6 +10,7 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from app.bankroll.service import current_balance
 from app.core.deps import get_current_user
 from app.db.models.football import (
     AppPrediction,
@@ -48,10 +49,6 @@ from app.schemas.football import (
 )
 
 router = APIRouter()
-
-# Placeholder until the Bankroll module (docs/MASTER_PLAN.md §6) is wired
-# to real data — same constant the mockup/frontend used.
-DEFAULT_BANKROLL = 2480.50
 
 RULE_LABELS = {
     "R1": "Aggregate lead",
@@ -173,7 +170,7 @@ def get_batch(batch_id: int, user: User = Depends(get_current_user), db: Session
     return BatchOut(id=batch.id, created_at=batch.created_at, matches=[_to_board_row(m) for m in batch.matches])
 
 
-def _to_detail(match: Match) -> MatchDetailOut:
+def _to_detail(match: Match, user_id: int, db: Session) -> MatchDetailOut:
     app_pred = match.app_prediction
     app_score = app_pred.correct_score if app_pred else ""
     implied_home, implied_draw, implied_away = implied_probabilities(match.odds_home, match.odds_draw, match.odds_away)
@@ -249,7 +246,8 @@ def _to_detail(match: Match) -> MatchDetailOut:
         detail.risk_tier = risk.risk_tier
         detail.usage_flag = risk.usage_flag
         if pred and pred.final_prob is not None and pred.final_odd is not None:
-            stake = suggested_stake(pred.final_prob, pred.final_odd, risk.risk_tier, DEFAULT_BANKROLL)
+            balance = current_balance(db, user_id)
+            stake = suggested_stake(pred.final_prob, pred.final_odd, risk.risk_tier, balance)
             detail.stake = StakeOut(pct=stake.pct, amount=stake.amount)
 
     return detail
@@ -258,7 +256,7 @@ def _to_detail(match: Match) -> MatchDetailOut:
 @router.get("/football/matches/{match_id}", response_model=MatchDetailOut)
 def get_match(match_id: int, user: User = Depends(get_current_user), db: Session = Depends(get_db)) -> MatchDetailOut:
     match = _get_owned_match(match_id, user, db)
-    return _to_detail(match)
+    return _to_detail(match, user.id, db)
 
 
 @router.post("/football/matches/{match_id}/research", response_model=MatchDetailOut)
@@ -365,7 +363,7 @@ async def research_match(match_id: int, user: User = Depends(get_current_user), 
 
     db.commit()
     db.refresh(match)
-    return _to_detail(match)
+    return _to_detail(match, user.id, db)
 
 
 @router.post("/football/matches/{match_id}/result", response_model=MatchDetailOut)
@@ -388,4 +386,4 @@ def record_result(match_id: int, payload: ResultUpdate, user: User = Depends(get
 
     db.commit()
     db.refresh(match)
-    return _to_detail(match)
+    return _to_detail(match, user.id, db)
