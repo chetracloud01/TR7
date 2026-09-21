@@ -221,3 +221,55 @@ Per the build order, what's left is phase 8 (Hardening: key
 encryption audit, rate limiting, backups, deployment) and phase 9+
 (a future module). The still-mock/not-wired items listed under
 Phases 2–5 above haven't changed.
+
+**Phase 8** (Hardening — the build order's phase 8: "key encryption
+audit, rate limiting, backups, deployment"): done.
+- Rate limiting (`backend/app/core/rate_limit.py`): an in-memory,
+  per-IP sliding-window limiter — no Redis needed for a single-process
+  personal app. `POST /auth/login` is capped at 10 attempts/5min
+  (brute-force protection); chat send and football research are
+  capped at 20 calls/min each (catches a retry loop or a stuck client
+  before it runs up a real LLM bill).
+- Key encryption audit: found that `secret_encryption_key` silently
+  derives a usable (but weak, publicly-derivable) key via SHA256 when
+  it isn't a real Fernet key — the right fallback for local dev, but a
+  real risk if a production deploy forgot to generate one, since the
+  placeholder it'd fall back from is sitting in this public repo's
+  `.env.example`. Fixed with `assert_production_secrets()`
+  (`app/core/config.py`), which refuses to even start — raises at
+  import time, before the port binds — if `ENVIRONMENT=production`
+  and any of `secret_encryption_key`/`session_secret`/`admin_password`
+  is still its exact placeholder value. Also found and fixed: neither
+  `backend/` nor `frontend/` had a `.dockerignore`, so the new
+  production Dockerfiles' `COPY . .` would have baked `backend/.env`
+  (real secrets) straight into an image layer.
+- Backups (`scripts/backup_db.sh`, `scripts/restore_db.sh`):
+  `pg_dump`/`psql` wrappers that read `DATABASE_URL` from
+  `backend/.env` automatically; restore asks for confirmation before
+  dropping anything.
+- Deployment: production `Dockerfile`s for both services (non-reload,
+  non-root, migrations-on-boot for the backend; a multi-stage,
+  `output: "standalone"` build for the frontend), `docker-compose.prod.yml`,
+  and `docs/DEPLOYMENT.md` covering both open options from the master
+  plan (self-host via Docker Compose + a reverse proxy for TLS, or
+  Vercel + Railway/Fly.io) plus the secret-generation checklist and a
+  manual key-rotation procedure.
+- **Verified, not assumed, with one real gap**: the production secrets
+  guard was verified directly in all three cases (dev never raises,
+  production with a placeholder raises before uvicorn binds a port,
+  production with real secrets doesn't raise); rate limiting was
+  verified live (11th login attempt in a window returns 429, a
+  different simulated IP isn't blocked, the LLM-call limiter fires
+  before the route body runs); the backup/restore round trip was
+  verified live (a real dump restored into a scratch database with
+  matching row counts). The actual Docker image builds could **not**
+  be verified — this sandbox's nested environment can't run a Docker
+  daemon (no permission to raise ulimits) — so instead each image's
+  underlying mechanism was exercised directly outside Docker: the
+  entrypoint script was run against the dev database and correctly
+  applied migrations before exec'ing the given command, and the
+  frontend's standalone build was generated, assembled exactly as the
+  Dockerfile does (copying in `public`/`.next/static`), and run
+  directly, serving real pages. Build the images yourself
+  (`docker compose -f docker-compose.prod.yml build`) before trusting
+  them for a real deploy.
