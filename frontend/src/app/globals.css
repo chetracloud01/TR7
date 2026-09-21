@@ -1,0 +1,144 @@
+@import "tailwindcss";
+
+/*
+  Design tokens per theme preset. Every component reads these CSS custom
+  properties (via Tailwind arbitrary values, e.g. bg-[var(--surface)])
+  instead of hardcoded colors, so switching [data-theme] on <html>
+  repaints the whole app — see docs/MASTER_PLAN.md "Theming".
+*/
+
+:root,
+[data-theme="warm"] {
+  --bg: #16120d;
+  --surface: #1f1811;
+  --surface-2: #292016;
+  --border: #33281b;
+  --border-2: #3d3122;
+  --text: #f5efe3;
+  --text-2: #afa189;
+  --text-3: #7a6e58;
+  --accent: #c9a227;
+  --accent-contrast: #16120d;
+  --positive: #4e9b72;
+  --positive-bg: rgba(78, 155, 114, 0.14);
+  --danger: #c15b4a;
+  --danger-bg: rgba(193, 91, 74, 0.13);
+  --pending: #ce8a3f;
+  --pending-bg: rgba(206, 138, 63, 0.15);
+  --font-display: "Frank Ruhl Libre", ui-serif, Georgia, serif;
+}
+
+[data-theme="neon"] {
+  --bg: #0a0d0c;
+  --surface: #121512;
+  --surface-2: #1a1f1b;
+  --border: #232b25;
+  --border-2: #2d362f;
+  --text: #eafbea;
+  --text-2: #9fb3a3;
+  --text-3: #657069;
+  --accent: #9fff3d;
+  --accent-contrast: #0a0d0c;
+  --positive: #3de0ff;
+  --positive-bg: rgba(61, 224, 255, 0.14);
+  --danger: #ff4d6d;
+  --danger-bg: rgba(255, 77, 109, 0.14);
+  --pending: #ffc93d;
+  --pending-bg: rgba(255, 201, 61, 0.15);
+  --font-display: "Space Grotesk", ui-sans-serif, system-ui, sans-serif;
+}
+
+[data-theme="editorial"] {
+  --bg: #faf7f0;
+  --surface: #ffffff;
+  --surface-2: #f1ebdd;
+  --border: #e4dac4;
+  --border-2: #d8cbae;
+  --text: #241c14;
+  --text-2: #5b5040;
+  --text-3: #8b7f68;
+  --accent: #1f3a5f;
+  --accent-contrast: #faf7f0;
+  --positive: #2f7a4f;
+  --positive-bg: rgba(47, 122, 79, 0.1);
+  --danger: #b23a2e;
+  --danger-bg: rgba(178, 58, 46, 0.1);
+  --pending: #b8862b;
+  --pending-bg: rgba(184, 134, 43, 0.12);
+  --font-display: "Newsreader", ui-serif, Georgia, serif;
+}
+
+[data-theme="calm"] {
+  --bg: #f5f2ec;
+  --surface: #ffffff;
+  --surface-2: #ece7dc;
+  --border: #ded7c7;
+  --border-2: #cfc6b0;
+  --text: #2b2e28;
+  --text-2: #5f6656;
+  --text-3: #8c927f;
+  --accent: #6b8f71;
+  --accent-contrast: #f5f2ec;
+  --positive: #4f8f63;
+  --positive-bg: rgba(79, 143, 99, 0.12);
+  --danger: #b85c4a;
+  --danger-bg: rgba(184, 92, 74, 0.12);
+  --pending: #c08a3e;
+  --pending-bg: rgba(192, 138, 62, 0.14);
+  --font-display: "Source Serif 4", ui-serif, Georgia, serif;
+}
+
+:root {
+  --font-body: "Manrope", ui-sans-serif, system-ui, sans-serif;
+  --font-mono: "IBM Plex Mono", ui-monospace, monospace;
+}
+
+* {
+  border-color: var(--border);
+}
+
+body {
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--font-body);
+}
+
+::placeholder {
+  color: var(--text-3);
+}
+
+@layer components {
+  .tr7-display {
+    font-family: var(--font-display);
+  }
+  .tr7-mono {
+    font-family: var(--font-mono);
+  }
+  .tr7-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 1rem;
+  }
+  .tr7-btn-primary {
+    background: var(--accent);
+    color: var(--accent-contrast);
+    font-weight: 600;
+    border-radius: 0.625rem;
+    padding: 0.55rem 1.1rem;
+    font-size: 0.8125rem;
+  }
+  .tr7-btn-ghost {
+    background: transparent;
+    border: 1px solid var(--border-2);
+    color: var(--text);
+    border-radius: 0.625rem;
+    padding: 0.55rem 1.1rem;
+    font-size: 0.8125rem;
+  }
+  .tr7-pill {
+    font-size: 0.6875rem;
+    padding: 0.2rem 0.55rem;
+    border-radius: 999px;
+    width: fit-content;
+  }
+}
