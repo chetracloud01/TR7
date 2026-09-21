@@ -24,6 +24,18 @@ class Settings(BaseSettings):
 
     cors_origins: list[str] = ["http://localhost:3000"]
 
+    # Session cookie signing secret — distinct from secret_encryption_key so
+    # rotating one never invalidates the other. Generate for real deployments with:
+    # python -c "import secrets; print(secrets.token_urlsafe(32))"
+    session_secret: str = "changeme-generate-a-real-session-secret-for-local-dev"
+    session_cookie_name: str = "tr7_session"
+    session_max_age_seconds: int = 60 * 60 * 24 * 30  # 30 days — personal app, not a shared login
+
+    # On first startup, if no user exists yet, one is created from these —
+    # there is no public registration endpoint (personal app, single user).
+    admin_email: str = "you@example.com"
+    admin_password: str = "changeme"
+
     daily_exposure_cap_pct: float = 10.0
     calibration_default_discount: float = 0.87
 

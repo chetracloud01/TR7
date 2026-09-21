@@ -2,7 +2,12 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import { useEffect, useState } from "react";
+import { api } from "@/lib/api";
+import { reconcileThemeFromServer } from "@/lib/useTheme";
+import { TOTAL_PROVIDER_COUNT } from "@/data/providers";
 import { ThemeSwatches } from "./ThemeSwatches";
+import type { ProviderOut } from "./ProviderCard";
 
 const NAV_ITEMS = [
   {
@@ -51,6 +56,15 @@ const NAV_ITEMS = [
 
 export function Sidebar() {
   const pathname = usePathname();
+  const [connectedCount, setConnectedCount] = useState<number | null>(null);
+
+  useEffect(() => {
+    reconcileThemeFromServer();
+    api
+      .get<ProviderOut[]>("/providers")
+      .then((rows) => setConnectedCount(rows.filter((p) => p.connected).length + 1)) // +1 for keyless Ollama
+      .catch(() => {});
+  }, []);
 
   return (
     <div
@@ -104,7 +118,9 @@ export function Sidebar() {
       <div className="flex flex-col gap-2.5 pt-4 border-t" style={{ borderColor: "var(--border)" }}>
         <div className="flex items-center gap-2 px-2">
           <span className="w-[7px] h-[7px] rounded-full shrink-0" style={{ background: "var(--positive)" }} />
-          <span className="text-xs" style={{ color: "var(--text-2)" }}>4 of 6 providers connected</span>
+          <span className="text-xs" style={{ color: "var(--text-2)" }}>
+            {connectedCount ?? "—"} of {TOTAL_PROVIDER_COUNT} providers connected
+          </span>
         </div>
 
         <div className="flex flex-col gap-1.5 px-2">
@@ -119,10 +135,25 @@ export function Sidebar() {
           >
             <span className="tr7-mono text-[11px]" style={{ color: "var(--text-2)" }}>YOU</span>
           </div>
-          <div className="flex flex-col leading-tight">
+          <div className="flex flex-col leading-tight flex-1 min-w-0">
             <span className="text-[12.5px] font-medium" style={{ color: "var(--text)" }}>Personal account</span>
             <span className="text-[11px]" style={{ color: "var(--text-3)" }}>Single-user mode</span>
           </div>
+          <button
+            aria-label="Log out"
+            title="Log out"
+            onClick={async () => {
+              await api.post("/auth/logout");
+              window.location.href = "/login";
+            }}
+            className="shrink-0 cursor-pointer bg-transparent border-none flex"
+          >
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="var(--text-3)" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M9 21H5a2 2 0 01-2-2V5a2 2 0 012-2h4" />
+              <path d="M16 17l5-5-5-5" />
+              <path d="M21 12H9" />
+            </svg>
+          </button>
         </div>
       </div>
     </div>
