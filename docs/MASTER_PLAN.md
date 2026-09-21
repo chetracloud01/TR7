@@ -215,6 +215,21 @@ that loop, without changing the methodology itself:
 6. **Automatic screenshot/PDF parsing.** The vision-LLM extraction in 5.1
    replaces manually retyping App fields from a screenshot — feeds
    straight into the same schema the rest of the pipeline expects.
+7. **Live market odds + automatic result capture — this closes the loop.**
+   Everything upstream (EV, confidence, the calibration log) is only as
+   good as two facts that can't stay manual: the odd actually available at
+   stake time, and what actually happened. A sports-data/odds API supplies
+   the market odd at parse time (falling back to the uploaded value only
+   when the API has no line yet), and the same API polls for the final
+   score shortly after full-time — with manual entry as the fallback when
+   a fixture isn't covered. A settled result does three things
+   automatically: flips the linked `bets` row in the Bankroll module from
+   pending to won/lost, appends a row to `calibration_log` (predicted vs.
+   actual, feeding the Brier score/CLV in upgrade 4), and updates the
+   match's row on the Full Match Board from a predicted score to an
+   actual one. Without this, "feedback" stays a spreadsheet you update by
+   hand — with it, the star rating and the discount factor are always
+   trained on real outcomes.
 
 None of this changes the filters, the rules, or the output format — it
 replaces "a person doing steps 3–7 by hand in a chat" with the same steps
@@ -223,13 +238,14 @@ run by the backend, with better inputs at each stage.
 ### 5.3 Data model
 
 - `match_batches` (uploaded sheet/screenshot/PDF, source_ref, parsed_at, mode: `full_rating`|`qualifying`)
-- `matches` (batch_id, date_kickoff_ict, country, competition, home_team, away_team, market_odds_1x2)
+- `matches` (batch_id, date_kickoff_ict, competition_country, competition, home_team, home_team_country, away_team, away_team_country, market_odds_1x2, odds_source: `live_api`|`uploaded`, odds_synced_at) — competition country/region (e.g. "Asia (Intl.)") is kept separate from each team's own country, since continental competitions routinely pair teams from different countries (an AFC Champions League Two or Europa League fixture is the common case, not the exception).
 - `app_predictions` (match_id, tip, h_pct, d_pct, a_pct, over_under, btts, correct_score, handicap_line, raw_input_ref)
 - `research_predictions` (match_id, model_used, raw_prob, disc_prob, correct_score, btts, over_under, handicap_line, rationale, sources: jsonb)
 - `context_rule_flags` (match_id, rule_code: R1–R6, fired: bool, note)
 - `predictions` (match_id, app_prediction_id, research_prediction_id, final_tip, final_odd, final_prob, ev, agreement: agree/partial/disagree/overridden)
 - `confidence_scores` (match_id, factor_breakdown: jsonb, total_points, stars)
 - `risk_flags` (match_id, risk_tier: low/medium/high, usage_flag: banker_only/lottery_odd/friendly/cs_mismatch/null)
+- `match_results` (match_id, actual_score, actual_outcome: 1/X/2, actual_btts, actual_total_goals, settled_at, result_source: `auto_api`|`manual`) — the fact table that closes the loop: written once by the API poll (or manual entry) shortly after full-time, then read by `bets` (settle pending → won/lost), `calibration_log` (predicted vs. actual), and the Full Match Board (predicted score → actual score).
 - `slips` (legs: [match_id], correlation_check: jsonb, combined_odd)
 - `calibration_log` (date, market_type, picks_settled, avg_predicted_prob, actual_win_rate, brier_score, clv, discount_factor)
 - `daily_exposure` (date, total_pct_staked)
